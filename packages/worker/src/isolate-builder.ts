@@ -1,7 +1,6 @@
 import path from 'path';
 import util from 'util';
 import dedent from 'dedent';
-import ivm from 'isolated-vm';
 import webpack from 'webpack';
 import * as realFS from 'fs';
 import * as memfs from 'memfs';
@@ -61,24 +60,6 @@ export class WorkflowIsolateBuilder {
     this.genEntrypoint(vol, entrypointPath);
     await this.bundle(ufs, entrypointPath, distDir);
     return ufs.readFileSync(path.join(distDir, 'main.js'), 'utf8');
-  }
-
-  /**
-   * @return a V8 snapshot which can be used to create isolates
-   */
-  public async buildSnapshot(): Promise<ivm.ExternalCopy<ArrayBuffer>> {
-    const code = await this.createBundle();
-    return ivm.Isolate.createSnapshot([{ code, filename: 'workflow-isolate' }]);
-  }
-
-  /**
-   * Bundle Workflows with dependencies and return an Isolate pre-loaded with the bundle.
-   *
-   * @param maxIsolateMemoryMB used to limit the memory consumption of the created isolate
-   */
-  public async buildIsolate(maxIsolateMemoryMB: number): Promise<ivm.Isolate> {
-    const snapshot = await this.buildSnapshot();
-    return new ivm.Isolate({ snapshot, memoryLimit: maxIsolateMemoryMB });
   }
 
   /**

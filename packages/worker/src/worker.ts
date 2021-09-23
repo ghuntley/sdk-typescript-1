@@ -19,7 +19,7 @@ import {
 import { delay, filter, first, ignoreElements, map, mergeMap, takeUntil, takeWhile, tap } from 'rxjs/operators';
 import * as native from '@temporalio/core-bridge';
 import { coresdk } from '@temporalio/proto';
-import { ApplyMode, ExternalDependencies, WorkflowInfo } from '@temporalio/workflow';
+import { ExternalDependencies } from '@temporalio/workflow';
 import { Info as ActivityInfo } from '@temporalio/activity';
 import {
   ActivityOptions,
@@ -44,10 +44,10 @@ import { Workflow } from './workflow';
 import { Activity } from './activity';
 import { Logger } from './logger';
 import { WorkflowIsolateBuilder } from './isolate-builder';
-import { IsolateContextProvider, RoundRobinIsolateContextProvider } from './isolate-context-provider';
+import { IsolateContextProvider, SimpleIsolateContextProvider } from './isolate-context-provider';
 import * as errors from './errors';
 import { childSpan, instrument, tracer } from './tracing';
-import { InjectedDependencies, getIvmTransferOptions } from './dependencies';
+import { InjectedDependencies } from './dependencies';
 import { ActivityExecuteInput, WorkerInterceptors } from './interceptors';
 export { RetryOptions, IllegalStateError } from '@temporalio/common';
 export { ActivityOptions, DataConverter, defaultDataConverter, errors };
@@ -188,15 +188,6 @@ export interface WorkerOptions {
   maxIsolateMemoryMB?: number;
 
   /**
-   * Controls number of v8 isolates the Worker should create.
-   *
-   * New Workflows are created on this pool in a round-robin fashion.
-   *
-   * @default 8
-   */
-  isolatePoolSize?: number;
-
-  /**
    * The number of Workflow isolates to keep in cached in memory
    *
    * Cached Workflows continue execution from their last stopping point.
@@ -242,7 +233,6 @@ export type WorkerOptionsWithDefaults<T extends WorkerSpec = DefaultWorkerSpec> 
       | 'stickyQueueScheduleToStartTimeout'
       | 'isolateExecutionTimeout'
       | 'maxIsolateMemoryMB'
-      | 'isolatePoolSize'
       | 'maxCachedWorkflows'
     >
   >;
@@ -470,11 +460,7 @@ export class Worker<T extends WorkerSpec = DefaultWorkerSpec> {
           compiledOptions.workflowsPath,
           compiledOptions.interceptors?.workflowModules
         );
-        contextProvider = await RoundRobinIsolateContextProvider.create(
-          builder,
-          compiledOptions.isolatePoolSize,
-          compiledOptions.maxIsolateMemoryMB
-        );
+        contextProvider = await SimpleIsolateContextProvider.create(builder);
       }
 
       return new this(nativeWorker, contextProvider, compiledOptions);
@@ -921,36 +907,20 @@ export class Worker<T extends WorkerSpec = DefaultWorkerSpec> {
    * Inject default console log and user provided external dependencies into a Workflow isolate
    */
   protected async injectDependencies(workflow: Workflow): Promise<void> {
-    await workflow.injectGlobal(
-      'console.log',
-      (...args: any[]) => {
+    await workflow.injectGlobal('console', {
+      log: (...args: any[]) => {
         if (workflow.info.isReplaying) return;
         console.log(`${workflow.info.workflowType} ${workflow.info.runId} >`, ...args);
       },
-      ApplyMode.SYNC
-    );
+    });
 
     if (includesDeps(this.options)) {
       for (const [ifaceName, dep] of Object.entries(this.options.dependencies)) {
         for (const [fnName, impl] of Object.entries(dep)) {
-          await workflow.injectDependency(
-            ifaceName,
-            fnName,
-            (...args) => {
-              if (!impl.callDuringReplay && workflow.info.isReplaying) return;
-              try {
-                const ret = impl.fn(workflow.info, ...args);
-                if (ret instanceof Promise) {
-                  return ret.catch((error) => this.handleExternalDependencyError(workflow.info, impl.applyMode, error));
-                }
-                return ret;
-              } catch (error) {
-                this.handleExternalDependencyError(workflow.info, impl.applyMode, error);
-              }
-            },
-            impl.applyMode,
-            getIvmTransferOptions(impl)
-          );
+          await workflow.injectDependency(ifaceName, fnName, (...args) => {
+            if (!impl.callDuringReplay && workflow.info.isReplaying) return;
+            return impl.fn(workflow.info, ...args);
+          });
         }
       }
     }
@@ -1191,20 +1161,6 @@ export class Worker<T extends WorkerSpec = DefaultWorkerSpec> {
     } finally {
       await this.nativeWorker.completeShutdown();
       this.isolateContextProvider?.destroy();
-    }
-  }
-
-  /**
-   * Log when an external dependency function throws an error in IGNORED mode and throw otherwise
-   */
-  protected handleExternalDependencyError(workflowInfo: WorkflowInfo, applyMode: ApplyMode, error: unknown): void {
-    if (applyMode === ApplyMode.SYNC_IGNORED || applyMode === ApplyMode.ASYNC_IGNORED) {
-      this.log.error('External dependency function threw an error', {
-        workflowInfo,
-        error,
-      });
-    } else {
-      throw error;
     }
   }
 }

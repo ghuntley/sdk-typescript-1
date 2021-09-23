@@ -13,7 +13,6 @@ async function main() {
   const maxConcurrentWorkflowTaskExecutions = args['--max-concurrent-wft-executions'] ?? 100;
   const maxConcurrentActivityTaskPolls = args['--max-concurrent-at-polls'] ?? 20;
   const maxConcurrentWorkflowTaskPolls = args['--max-concurrent-wft-polls'] ?? 20;
-  const isolatePoolSize = args['--isolate-pool-size'] ?? 16;
   const maxCachedWorkflows = args['--max-cached-wfs'] ?? 2500;
   const oTelUrl = args['--otel-url'] ?? 'grpc://localhost:4317';
   const logLevel = (args['--log-level'] || 'INFO').toUpperCase();
@@ -59,7 +58,6 @@ async function main() {
     maxConcurrentActivityTaskPolls,
     maxConcurrentWorkflowTaskPolls,
     maxCachedWorkflows,
-    isolatePoolSize,
   });
   console.log('Created worker');
 

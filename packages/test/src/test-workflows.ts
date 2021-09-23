@@ -3,11 +3,10 @@ import path from 'path';
 import Long from 'long';
 import dedent from 'dedent';
 import { coresdk } from '@temporalio/proto';
-import { ApplyMode } from '@temporalio/workflow';
 import { ApplicationFailure, defaultDataConverter, errorToFailure, msToTs, RetryState } from '@temporalio/common';
 import { Workflow } from '@temporalio/worker/lib/workflow';
 import { WorkflowIsolateBuilder } from '@temporalio/worker/lib/isolate-builder';
-import { RoundRobinIsolateContextProvider } from '@temporalio/worker/lib/isolate-context-provider';
+import { SimpleIsolateContextProvider } from '@temporalio/worker/lib/isolate-context-provider';
 import { DefaultLogger } from '@temporalio/worker/lib/logger';
 import * as activityFunctions from './activities';
 import { u8 } from './helpers';
@@ -17,7 +16,7 @@ export interface Context {
   logs: unknown[][];
   workflowType: string;
   startTime: number;
-  contextProvider: RoundRobinIsolateContextProvider;
+  contextProvider: SimpleIsolateContextProvider;
 }
 
 const test = anyTest as TestInterface<Context>;
@@ -27,7 +26,7 @@ test.before(async (t) => {
   const workflowsPath = path.join(__dirname, 'workflows');
   const nodeModulesPath = path.join(__dirname, '../../../node_modules');
   const builder = new WorkflowIsolateBuilder(logger, [nodeModulesPath], workflowsPath);
-  t.context.contextProvider = await RoundRobinIsolateContextProvider.create(builder, 1, 1024);
+  t.context.contextProvider = await SimpleIsolateContextProvider.create(builder);
 });
 
 test.after.always((t) => {
@@ -54,7 +53,7 @@ async function createWorkflow(
   workflowType: string,
   startTime: number,
   logs: unknown[][],
-  contextProvider: RoundRobinIsolateContextProvider
+  contextProvider: SimpleIsolateContextProvider
 ) {
   const workflow = await Workflow.create(
     await contextProvider.getContext(),
@@ -71,7 +70,7 @@ async function createWorkflow(
     startTime,
     100
   );
-  await workflow.injectGlobal('console.log', (...args: unknown[]) => void logs.push(args), ApplyMode.SYNC);
+  await workflow.injectGlobal('console', { log: (...args: unknown[]) => void logs.push(args) });
   return workflow;
 }
 
@@ -702,7 +701,8 @@ test('asyncFailSignalWorkflow', async (t) => {
           'Signal failed',
           dedent`
           Error: Signal failed
-              at eval`,
+              at eval
+              at processTicksAndRejections`,
           'Error'
         ),
       ])
@@ -1272,6 +1272,8 @@ test('cancellationErrorIsPropagated', async (t) => {
             at CancellationScope.cancel
             at eval
             at CancellationScope.runInContext
+            at node:async_hooks
+            at AsyncResource.runInAsyncScope
             at AsyncLocalStorage.run
             at CancellationScope.run
             at Function.cancellable
@@ -1485,7 +1487,7 @@ test('globalOverrides', async (t) => {
 test('logAndTimeout', async (t) => {
   const { workflowType, workflow } = t.context;
   const logs: string[] = [];
-  await workflow.injectDependency('logger', 'info', (message: string) => logs.push(message), ApplyMode.ASYNC_IGNORED);
+  await workflow.injectDependency('logger', 'info', (message: string) => logs.push(message));
   await t.throwsAsync(activate(t, makeStartWorkflow(workflowType)), {
     message: 'Script execution timed out.',
   });
@@ -1655,7 +1657,7 @@ test('conditionWaiter', async (t) => {
   const { workflowType, workflow } = t.context;
   // This will set x = 3 in the workflow when resolved.
   // Test that conditions are unblocked after external dependency resolution.
-  await workflow.injectDependency('unblock', 'me', async () => 3, ApplyMode.ASYNC);
+  await workflow.injectDependency('unblock', 'me', async () => 3);
   {
     const completion = await activate(t, makeStartWorkflow(workflowType));
     compareCompletion(t, completion, makeSuccess([makeStartTimerCommand({ seq: 1, startToFireTimeout: msToTs(1) })]));

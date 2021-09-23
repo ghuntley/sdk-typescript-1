@@ -19,7 +19,7 @@ import { alea, RNG } from './alea';
 import { ContinueAsNew, WorkflowInfo } from './interfaces';
 import { QueryInput, SignalInput, WorkflowExecuteInput, WorkflowInterceptors } from './interceptors';
 import { DeterminismViolationError, WorkflowExecutionAlreadyStartedError, isCancellation } from './errors';
-import { ExternalCall, ExternalDependencies } from './dependencies';
+import { ExternalDependencies } from './dependencies';
 import { ROOT_SCOPE } from './cancellation-scope';
 
 export type ResolveFunction<T = any> = (val: T) => any;
@@ -350,10 +350,6 @@ export class State {
    */
   public commands: coresdk.workflow_commands.IWorkflowCommand[] = [];
   /**
-   * Buffer containing external dependency calls which have not yet been transferred out of the isolate
-   */
-  public pendingExternalCalls: ExternalCall[] = [];
-
   /**
    * Stores all {@link condition}s that haven't been unblocked yet
    */
@@ -414,15 +410,6 @@ export class State {
   };
 
   public dependencies: ExternalDependencies = {};
-
-  public getAndResetPendingExternalCalls(): ExternalCall[] {
-    if (this.pendingExternalCalls.length > 0) {
-      const ret = this.pendingExternalCalls;
-      this.pendingExternalCalls = [];
-      return ret;
-    }
-    return [];
-  }
 
   /**
    * Used to require user code

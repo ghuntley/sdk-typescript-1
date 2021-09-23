@@ -1,5 +1,14 @@
 import { CancelledFailure, IllegalStateError } from '@temporalio/common';
-import { AsyncLocalStorage } from './async-local-storage';
+import type { AsyncLocalStorage as ALS } from 'node:async_hooks';
+
+export function makeAsyncLocalStorage<T>(): ALS<T> {
+  const global = globalThis as any;
+  if ('AsyncLocalStorage' in global) {
+    return new global.AsyncLocalStorage();
+  }
+  // In case Workflow code is imported in Node.js context
+  return {} as any;
+}
 
 /** Magic symbol used to create the root scope - intentionally not exported */
 const NO_PARENT = Symbol('NO_PARENT');
@@ -168,7 +177,7 @@ export class CancellationScope {
   }
 }
 
-const storage = new AsyncLocalStorage<CancellationScope>();
+const storage = makeAsyncLocalStorage<CancellationScope>();
 
 export class RootCancellationScope extends CancellationScope {
   cancel(): void {

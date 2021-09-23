@@ -1,5 +1,5 @@
 // @@@SNIPSTART nodejs-external-dependencies-logger-worker
-import { Worker, ApplyMode } from '@temporalio/worker';
+import { Worker } from '@temporalio/worker';
 import { LoggerDependencies } from '../workflows';
 
 async function main() {
@@ -12,7 +12,6 @@ async function main() {
           fn(workflowInfo, message) {
             console.log('workflow: ', workflowInfo.runId, 'message: ', message);
           },
-          applyMode: ApplyMode.ASYNC_IGNORED, // See docs for other modes
           callDuringReplay: false, // The default
         },
       },

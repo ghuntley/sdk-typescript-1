@@ -46,7 +46,6 @@ export * from './activity-failures';
 export * from './sleep';
 export * from './http';
 export * from './dependencies';
-export * from './ignored-dependencies';
 export * from './interrupt-signal';
 export * from './patched';
 export * from './deprecate-patch';

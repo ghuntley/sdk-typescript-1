@@ -3,7 +3,6 @@
  *
  * @module
  */
-import ivm from 'isolated-vm';
 import {
   IllegalStateError,
   msToTs,
@@ -17,9 +16,8 @@ import { coresdk } from '@temporalio/proto/lib/coresdk';
 import { WorkflowInfo } from './interfaces';
 import { consumeCompletion, handleWorkflowFailure, state } from './internals';
 import { alea } from './alea';
-import { IsolateExtension, HookManager } from './promise-hooks';
 import { DeterminismViolationError } from './errors';
-import { ApplyMode, ExternalDependencyFunction, ExternalCall } from './dependencies';
+import { ExternalDependencyFunction } from './dependencies';
 import { WorkflowInterceptorsFactory } from './interceptors';
 
 export function setRequireFunc(fn: Exclude<typeof state['require'], undefined>): void {
@@ -97,8 +95,7 @@ export async function initRuntime(
   info: WorkflowInfo,
   interceptorModules: string[],
   randomnessSeed: number[],
-  now: number,
-  isolateExtension: IsolateExtension
+  now: number
 ): Promise<void> {
   // Globals are overridden while building the isolate before loading user code.
   // For some reason the `WeakRef` mock is not restored properly when creating an isolate from snapshot in node 14 (at least on ubuntu), override again.
@@ -108,7 +105,6 @@ export async function initRuntime(
   state.info = info;
   state.now = now;
   state.random = alea(randomnessSeed);
-  HookManager.instance.setIsolateExtension(isolateExtension);
 
   const { require: req } = state;
   if (req === undefined) {
@@ -146,7 +142,6 @@ export async function initRuntime(
 }
 
 export interface ActivationResult {
-  externalCalls: ExternalCall[];
   numBlockedConditions: number;
 }
 
@@ -205,14 +200,9 @@ export async function activate(encodedActivation: Uint8Array, batchIndex: number
   });
 
   return {
-    externalCalls: state.getAndResetPendingExternalCalls(),
     numBlockedConditions: state.blockedConditions.size,
   };
 }
-
-type ActivationConclusion =
-  | { type: 'pending'; pendingExternalCalls: ExternalCall[]; numBlockedConditions: number }
-  | { type: 'complete'; encoded: Uint8Array };
 
 /**
  * Conclude a single activation.
@@ -221,56 +211,26 @@ type ActivationConclusion =
  * Activation may be in either `complete` or `pending` state according to pending external dependency calls.
  * Activation failures are handled in the main Node.js isolate.
  */
-export function concludeActivation(): ActivationConclusion {
-  const pendingExternalCalls = state.getAndResetPendingExternalCalls();
-  if (pendingExternalCalls.length > 0) {
-    return { type: 'pending', pendingExternalCalls, numBlockedConditions: state.blockedConditions.size };
-  }
+export function concludeActivation(): Uint8Array {
   const intercept = composeInterceptors(state.interceptors.internals, 'concludeActivation', (input) => input);
   const { info } = state;
   const { commands } = intercept({ commands: state.commands });
-  const encoded = coresdk.workflow_completion.WFActivationCompletion.encodeDelimited({
+  state.commands = [];
+  return coresdk.workflow_completion.WFActivationCompletion.encodeDelimited({
     runId: info?.runId,
     successful: { commands },
   }).finish();
-  state.commands = [];
-  return { type: 'complete', encoded };
-}
-
-export function getAndResetPendingExternalCalls(): ExternalCall[] {
-  return state.getAndResetPendingExternalCalls();
 }
 
 /**
  * Inject an external dependency function into the Workflow via global state.
  * The injected function is available via {@link dependencies}.
  */
-export function inject(
-  ifaceName: string,
-  fnName: string,
-  dependency: ivm.Reference<ExternalDependencyFunction>,
-  applyMode: ApplyMode,
-  transferOptions: ivm.TransferOptionsBidirectional
-): void {
+export function inject(ifaceName: string, fnName: string, dependency: ExternalDependencyFunction): void {
   if (state.dependencies[ifaceName] === undefined) {
     state.dependencies[ifaceName] = {};
   }
-  if (applyMode === ApplyMode.ASYNC) {
-    state.dependencies[ifaceName][fnName] = (...args: any[]) =>
-      new Promise((resolve, reject) => {
-        const seq = state.nextSeqs.dependency++;
-        state.completions.dependency.set(seq, {
-          resolve,
-          reject,
-        });
-        state.pendingExternalCalls.push({ ifaceName, fnName, args, seq });
-      });
-  } else if (applyMode === ApplyMode.ASYNC_IGNORED) {
-    state.dependencies[ifaceName][fnName] = (...args: any[]) =>
-      state.pendingExternalCalls.push({ ifaceName, fnName, args });
-  } else {
-    state.dependencies[ifaceName][fnName] = (...args: any[]) => dependency[applyMode](undefined, args, transferOptions);
-  }
+  state.dependencies[ifaceName][fnName] = (...args: any[]) => dependency(...args);
 }
 
 export interface ExternalDependencyResult {

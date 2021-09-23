@@ -16,7 +16,7 @@ import {
   WorkflowExecutionFailedError,
   WorkflowExecutionTerminatedError,
 } from '@temporalio/client';
-import { ApplyMode, defaultDataConverter, WorkflowInfo } from '@temporalio/workflow';
+import { defaultDataConverter, WorkflowInfo } from '@temporalio/workflow';
 import { defaultOptions } from './mock-native-worker';
 import { cleanStackTrace, RUN_INTEGRATION_TESTS } from './helpers';
 import { Deps } from './workflows/block-with-dependencies';
@@ -133,7 +133,6 @@ if (RUN_INTEGRATION_TESTS) {
       dependencies: {
         blocker: {
           block: {
-            applyMode: ApplyMode.ASYNC,
             fn: () => {
               setLangIsBlocked();
               return unblockLangPromise;
@@ -235,8 +234,6 @@ if (RUN_INTEGRATION_TESTS) {
             fn: (_: WorkflowInfo, event: string): void => {
               events.push(event);
             },
-            applyMode: ApplyMode.SYNC_IGNORED,
-            arguments: 'copy',
           },
         },
       },

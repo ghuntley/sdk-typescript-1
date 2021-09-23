@@ -1,31 +1,21 @@
 import { dependencies, ExternalDependencies } from '@temporalio/workflow';
 
 export interface TestDependencies extends ExternalDependencies {
-  syncVoid: {
-    promise(counter: number): void;
-    ignoredAsyncImpl(counter: number): void;
-    sync(counter: number): void;
-    ignoredSyncImpl(counter: number): void;
+  withReturnValue: {
+    runAsync(counter: number): Promise<number>;
+    runSync(counter: number): number;
   };
-  asyncIgnored: {
-    syncImpl(counter: number): void;
-    asyncImpl(counter: number): void;
-  };
-  sync: {
-    syncImpl(counter: number): number;
-    asyncImpl(counter: number): number;
-  };
-  async: {
-    syncImpl(counter: number): Promise<number>;
-    asyncImpl(counter: number): Promise<number>;
+  withNoReturnValue: {
+    runAsync(counter: number): Promise<void>;
+    runSync(counter: number): void;
   };
   error: {
     throwAsync(counter: number): Promise<never>;
     throwSync(counter: number): number;
-    throwSyncPromise(counter: number): number;
   };
 }
-const { syncVoid, asyncIgnored, sync, async, error } = dependencies<TestDependencies>();
+
+const { withReturnValue, withNoReturnValue, error } = dependencies<TestDependencies>();
 
 function convertErrorToIntResult(fn: (x: number) => any, x: number): number {
   try {
@@ -37,20 +27,12 @@ function convertErrorToIntResult(fn: (x: number) => any, x: number): number {
 
 export async function dependenciesWorkflow(): Promise<number> {
   let i = 0;
-  syncVoid.promise(i++);
-  syncVoid.ignoredAsyncImpl(i++);
-  syncVoid.sync(i++);
-  syncVoid.ignoredSyncImpl(i++);
+  withNoReturnValue.runSync(i++);
+  await withNoReturnValue.runAsync(i++);
 
-  asyncIgnored.syncImpl(i++);
-  asyncIgnored.asyncImpl(i++);
-
-  i = sync.syncImpl(i);
-  i = sync.asyncImpl(i);
-  i = await async.syncImpl(i);
-  i = await async.asyncImpl(i);
+  i = withReturnValue.runSync(i);
+  i = await withReturnValue.runAsync(i);
   i = await error.throwAsync(i).catch((err) => parseInt(err.message));
   i = convertErrorToIntResult(error.throwSync, i);
-  i = convertErrorToIntResult(error.throwSyncPromise, i);
   return i;
 }
