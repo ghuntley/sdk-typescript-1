@@ -1,30 +1,32 @@
 import vm from 'vm';
 import Long from 'long';
+import { AsyncLocalStorage } from 'async_hooks';
 import { coresdk } from '@temporalio/proto';
 import * as internals from '@temporalio/workflow/lib/worker-interface';
 import { ExternalDependencyFunction, WorkflowInfo } from '@temporalio/workflow';
 import { IllegalStateError } from '@temporalio/common';
-import { partition } from './utils';
+import { partition } from '../utils';
+import { Workflow, WorkflowCreator } from './interface';
 
-type WorkflowModule = typeof internals;
+/**
+ * Maintains a pool of v8 isolates, returns Context in a round-robin manner.
+ * Pre-compiles the bundled Workflow code from provided {@link WorkflowIsolateBuilder}.
+ */
+export class VMWorkflowCreator implements WorkflowCreator {
+  script: vm.Script | undefined;
 
-export class Workflow {
-  private constructor(
-    public readonly info: WorkflowInfo,
-    protected context: vm.Context | undefined,
-    readonly workflowModule: WorkflowModule,
-    public readonly isolateExecutionTimeoutMs: number,
-    readonly dependencies: Record<string, Record<string, ExternalDependencyFunction>> = {}
-  ) {}
+  protected constructor(script: vm.Script, public readonly isolateExecutionTimeoutMs: number) {
+    this.script = script;
+  }
 
-  public static async create(
-    context: vm.Context,
+  async createWorkflow(
     info: WorkflowInfo,
     interceptorModules: string[],
-    randomnessSeed: Long,
-    now: number,
-    isolateExecutionTimeoutMs: number
+    randomnessSeed: Long.Long,
+    now: number
   ): Promise<Workflow> {
+    const context = await this.getContext();
+    const { isolateExecutionTimeoutMs } = this;
     const workflowModule: WorkflowModule = new Proxy(
       {},
       {
@@ -34,7 +36,6 @@ export class Workflow {
             return vm.runInContext(`lib.${fn}(...globalThis.args)`, context, {
               timeout: isolateExecutionTimeoutMs,
               displayErrors: true,
-              // microtaskMode: 'afterEvaluate',
             });
           };
         },
@@ -43,8 +44,41 @@ export class Workflow {
 
     await workflowModule.initRuntime(info, interceptorModules, randomnessSeed.toBytes(), now);
 
-    return new Workflow(info, context, workflowModule, isolateExecutionTimeoutMs);
+    return new VMWorkflow(info, context, workflowModule, isolateExecutionTimeoutMs);
   }
+
+  protected async getContext(): Promise<vm.Context> {
+    if (this.script === undefined) {
+      throw new IllegalStateError('Isolate context provider was destroyed');
+    }
+    const context = vm.createContext({ AsyncLocalStorage });
+    this.script.runInContext(context);
+    return context;
+  }
+
+  /**
+   * Create a new instance, isolates and pre-compiled scripts are generated here
+   */
+  public static async create(code: string, isolateExecutionTimeoutMs: number): Promise<VMWorkflowCreator> {
+    const script = new vm.Script(code, { filename: 'workflow-isolate' });
+    return new this(script, isolateExecutionTimeoutMs);
+  }
+
+  public async destroy(): Promise<void> {
+    delete this.script;
+  }
+}
+
+type WorkflowModule = typeof internals;
+
+export class VMWorkflow implements Workflow {
+  constructor(
+    public readonly info: WorkflowInfo,
+    protected context: vm.Context | undefined,
+    readonly workflowModule: WorkflowModule,
+    public readonly isolateExecutionTimeoutMs: number,
+    readonly dependencies: Record<string, Record<string, ExternalDependencyFunction>> = {}
+  ) {}
 
   /**
    * Inject a function into the isolate context global scope
@@ -120,7 +154,7 @@ export class Workflow {
    * Dispose of the isolate's context.
    * Do not use this Workflow instance after this method has been called.
    */
-  public dispose(): void {
+  public async dispose(): Promise<void> {
     delete this.context;
   }
 }

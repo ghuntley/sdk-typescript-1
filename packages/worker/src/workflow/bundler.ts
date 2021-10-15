@@ -5,7 +5,7 @@ import webpack from 'webpack';
 import * as realFS from 'fs';
 import * as memfs from 'memfs';
 import * as unionfs from 'unionfs';
-import { Logger } from './logger';
+import { Logger } from '../logger';
 
 /**
  * Builds a V8 Isolate by bundling provided Workflows using webpack.
@@ -15,7 +15,7 @@ import { Logger } from './logger';
  * @param workflowsPath all Workflows found in path will be put in the bundle
  * @param workflowInterceptorModules list of interceptor modules to register on Workflow creation
  */
-export class WorkflowIsolateBuilder {
+export class WorkflowCodeBundler {
   constructor(
     public readonly logger: Logger,
     public readonly nodeModulesPaths: string[],

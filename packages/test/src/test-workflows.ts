@@ -4,19 +4,19 @@ import Long from 'long';
 import dedent from 'dedent';
 import { coresdk } from '@temporalio/proto';
 import { ApplicationFailure, defaultDataConverter, errorToFailure, msToTs, RetryState } from '@temporalio/common';
-import { Workflow } from '@temporalio/worker/lib/workflow';
-import { WorkflowIsolateBuilder } from '@temporalio/worker/lib/isolate-builder';
-import { SimpleIsolateContextProvider } from '@temporalio/worker/lib/isolate-context-provider';
+import { WorkflowCodeBundler } from '@temporalio/worker/lib/workflow/bundler';
+import { VMWorkflowCreator, VMWorkflow } from '@temporalio/worker/lib/workflow/vm';
 import { DefaultLogger } from '@temporalio/worker/lib/logger';
 import * as activityFunctions from './activities';
 import { u8 } from './helpers';
 
 export interface Context {
-  workflow: Workflow;
+  workflow: VMWorkflow;
   logs: unknown[][];
   workflowType: string;
   startTime: number;
-  contextProvider: SimpleIsolateContextProvider;
+  runId: string;
+  workflowCreator: VMWorkflowCreator;
 }
 
 const test = anyTest as TestInterface<Context>;
@@ -25,41 +25,44 @@ test.before(async (t) => {
   const logger = new DefaultLogger('INFO');
   const workflowsPath = path.join(__dirname, 'workflows');
   const nodeModulesPath = path.join(__dirname, '../../../node_modules');
-  const builder = new WorkflowIsolateBuilder(logger, [nodeModulesPath], workflowsPath);
-  t.context.contextProvider = await SimpleIsolateContextProvider.create(builder);
+  const bundler = new WorkflowCodeBundler(logger, [nodeModulesPath], workflowsPath);
+  const bundle = await bundler.createBundle();
+  t.context.workflowCreator = await VMWorkflowCreator.create(bundle, 100);
 });
 
-test.after.always((t) => {
-  t.context.contextProvider.destroy();
+test.after.always(async (t) => {
+  await t.context.workflowCreator.destroy();
 });
 
 test.beforeEach(async (t) => {
-  const { contextProvider } = t.context;
+  const { workflowCreator } = t.context;
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const testName = t.title.match(/\S+$/)![0];
   const logs: unknown[][] = [];
 
+  const runId = 'test-runId';
   const startTime = Date.now();
   t.context = {
     logs,
+    runId,
     workflowType: testName,
-    contextProvider,
+    workflowCreator,
     startTime,
-    workflow: await createWorkflow(testName, startTime, logs, contextProvider),
+    workflow: await createWorkflow(testName, runId, startTime, logs, workflowCreator),
   };
 });
 
 async function createWorkflow(
   workflowType: string,
+  runId: string,
   startTime: number,
   logs: unknown[][],
-  contextProvider: SimpleIsolateContextProvider
+  workflowCreator: VMWorkflowCreator
 ) {
-  const workflow = await Workflow.create(
-    await contextProvider.getContext(),
+  const workflow = (await workflowCreator.createWorkflow(
     {
       workflowType,
-      runId: 'test-runId',
+      runId,
       workflowId: 'test-workflowId',
       namespace: 'default',
       taskQueue: 'test',
@@ -67,18 +70,17 @@ async function createWorkflow(
     },
     [],
     Long.fromInt(1337),
-    startTime,
-    100
-  );
+    startTime
+  )) as VMWorkflow;
   await workflow.injectGlobal('console', { log: (...args: unknown[]) => void logs.push(args) });
   return workflow;
 }
 
 async function activate(t: ExecutionContext<Context>, activation: coresdk.workflow_activation.IWFActivation) {
-  const { workflow } = t.context;
+  const { workflow, runId } = t.context;
   const arr = await workflow.activate(activation);
   const completion = coresdk.workflow_completion.WFActivationCompletion.decodeDelimited(arr);
-  t.deepEqual(completion.runId, workflow.info.runId);
+  t.deepEqual(completion.runId, runId);
   return completion;
 }
 
@@ -91,7 +93,7 @@ function compareCompletion(
     req.toJSON(),
     new coresdk.workflow_completion.WFActivationCompletion({
       ...expected,
-      runId: t.context.workflow?.info.runId,
+      runId: t.context.runId,
     }).toJSON()
   );
 }
