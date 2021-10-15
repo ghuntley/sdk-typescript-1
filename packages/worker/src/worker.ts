@@ -54,6 +54,7 @@ import { SpanContext } from '@opentelemetry/api';
 import IWFActivationJob = coresdk.workflow_activation.IWFActivationJob;
 import { InjectedDependencies } from './dependencies';
 import { VMWorkflowCreator } from './workflow/vm';
+import { ThreadedVMWorkflowCreator } from './workflow/threaded-vm';
 
 native.registerErrors(errors);
 
@@ -452,7 +453,8 @@ export class Worker<T extends WorkerSpec = DefaultWorkerSpec> {
           compiledOptions.interceptors?.workflowModules
         );
         const bundle = await bundler.createBundle();
-        workflowCreator = await VMWorkflowCreator.create(bundle, compiledOptions.isolateExecutionTimeoutMs);
+        // TODO: don't hardcode number of threads
+        workflowCreator = await ThreadedVMWorkflowCreator.create(8, bundle, compiledOptions.isolateExecutionTimeoutMs);
       }
 
       return new this(nativeWorker, workflowCreator, compiledOptions);
@@ -835,7 +837,7 @@ export class Worker<T extends WorkerSpec = DefaultWorkerSpec> {
                             isReplaying: activation.isReplaying,
                           },
                           this.options.interceptors?.workflowModules ?? [],
-                          randomnessSeed,
+                          randomnessSeed.toBytes(),
                           tsToMs(activation.timestamp)
                         );
                       });

@@ -69,7 +69,7 @@ async function createWorkflow(
       isReplaying: false,
     },
     [],
-    Long.fromInt(1337),
+    Long.fromInt(1337).toBytes(),
     startTime
   )) as VMWorkflow;
   await workflow.injectGlobal('console', { log: (...args: unknown[]) => void logs.push(args) });

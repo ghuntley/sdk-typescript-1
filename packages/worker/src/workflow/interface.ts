@@ -23,7 +23,7 @@ export interface WorkflowCreator {
   createWorkflow(
     info: WorkflowInfo,
     interceptorModules: string[],
-    randomnessSeed: Long,
+    randomnessSeed: number[],
     now: number
   ): Promise<Workflow>;
 

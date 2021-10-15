@@ -12,11 +12,9 @@ import {
   addDefaultWorkerOptions,
   errors,
 } from '@temporalio/worker/lib/worker';
-import { VMWorkflowCreator } from '@temporalio/worker/lib/workflow/vm';
 import { DefaultLogger } from '@temporalio/worker';
 import { sleep } from '@temporalio/worker/lib/utils';
 import * as activities from './activities';
-import { WorkflowInfo } from '@temporalio/workflow';
 import { WorkflowCreator } from '@temporalio/worker/src/workflow/interface';
 
 function addActivityStartDefaults(task: coresdk.activity_task.IActivityTask) {
@@ -173,7 +171,7 @@ export const defaultOptions: WorkerOptions = {
 export function isolateFreeWorker(options: WorkerOptions = defaultOptions): Worker {
   return new Worker(
     {
-      async createWorkflow(info: WorkflowInfo, interceptorModules: string[], randomnessSeed: Long.Long, now: number) {
+      async createWorkflow() {
         throw new Error('Not implemented');
       },
       async destroy() {

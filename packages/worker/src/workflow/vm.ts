@@ -1,5 +1,4 @@
 import vm from 'vm';
-import Long from 'long';
 import { AsyncLocalStorage } from 'async_hooks';
 import { coresdk } from '@temporalio/proto';
 import * as internals from '@temporalio/workflow/lib/worker-interface';
@@ -22,7 +21,7 @@ export class VMWorkflowCreator implements WorkflowCreator {
   async createWorkflow(
     info: WorkflowInfo,
     interceptorModules: string[],
-    randomnessSeed: Long.Long,
+    randomnessSeed: number[],
     now: number
   ): Promise<Workflow> {
     const context = await this.getContext();
@@ -42,7 +41,7 @@ export class VMWorkflowCreator implements WorkflowCreator {
       }
     ) as any;
 
-    await workflowModule.initRuntime(info, interceptorModules, randomnessSeed.toBytes(), now);
+    await workflowModule.initRuntime(info, interceptorModules, randomnessSeed, now);
 
     return new VMWorkflow(info, context, workflowModule, isolateExecutionTimeoutMs);
   }
