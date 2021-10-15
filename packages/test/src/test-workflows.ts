@@ -1272,8 +1272,6 @@ test('cancellationErrorIsPropagated', async (t) => {
             at CancellationScope.cancel
             at eval
             at CancellationScope.runInContext
-            at node:async_hooks
-            at AsyncResource.runInAsyncScope
             at AsyncLocalStorage.run
             at CancellationScope.run
             at Function.cancellable
@@ -1489,7 +1487,8 @@ test('logAndTimeout', async (t) => {
   const logs: string[] = [];
   await workflow.injectDependency('logger', 'info', (message: string) => logs.push(message));
   await t.throwsAsync(activate(t, makeStartWorkflow(workflowType)), {
-    message: 'Script execution timed out.',
+    code: 'ERR_SCRIPT_EXECUTION_TIMEOUT',
+    message: 'Script execution timed out after 100ms',
   });
   t.deepEqual(logs, ['logging before getting stuck']);
 });
