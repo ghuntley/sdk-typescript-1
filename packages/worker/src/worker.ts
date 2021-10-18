@@ -19,7 +19,6 @@ import {
 import { delay, filter, first, ignoreElements, map, mergeMap, takeUntil, takeWhile, tap } from 'rxjs/operators';
 import * as native from '@temporalio/core-bridge';
 import { coresdk } from '@temporalio/proto';
-import { ExternalDependencies } from '@temporalio/workflow';
 import { Info as ActivityInfo } from '@temporalio/activity';
 import {
   ActivityOptions,
@@ -52,31 +51,9 @@ export { ActivityOptions, DataConverter, defaultDataConverter, errors };
 import { Core } from './core';
 import { SpanContext } from '@opentelemetry/api';
 import IWFActivationJob = coresdk.workflow_activation.IWFActivationJob;
-import { InjectedDependencies } from './dependencies';
-import { VMWorkflowCreator } from './workflow/vm';
 import { ThreadedVMWorkflowCreator } from './workflow/threaded-vm';
 
 native.registerErrors(errors);
-
-/**
- * Customize the Worker according to spec.
- *
- * Pass as a type parameter to {@link Worker.create} to alter the accepted {@link WorkerSpecOptions}
- */
-export interface WorkerSpec {
-  dependencies?: ExternalDependencies;
-}
-
-export interface DefaultWorkerSpec extends WorkerSpec {
-  dependencies: undefined;
-}
-
-/**
- * Same as {@link WorkerOptions} with {@link WorkerSpec} applied
- */
-export type WorkerSpecOptions<T extends WorkerSpec> = T extends { dependencies: ExternalDependencies }
-  ? { dependencies: InjectedDependencies<T['dependencies']> } & WorkerOptions
-  : WorkerOptions;
 
 /**
  * Options to configure the {@link Worker}
@@ -205,6 +182,12 @@ export interface WorkerOptions {
   maxCachedWorkflows?: number;
 
   /**
+   * TODO: document
+   * @default 8
+   */
+  workerThreadPoolSize?: number;
+
+  /**
    * A mapping of interceptor type to a list of factories or module paths
    */
   interceptors?: WorkerInterceptors;
@@ -218,9 +201,8 @@ export interface WorkerOptions {
 /**
  * WorkerOptions with all of the Worker required attributes
  */
-export type WorkerOptionsWithDefaults<T extends WorkerSpec = DefaultWorkerSpec> = WorkerOptions & {
-  dependencies: T['dependencies'] extends ExternalDependencies ? InjectedDependencies<T['dependencies']> : undefined;
-} & Required<
+export type WorkerOptionsWithDefaults = WorkerOptions &
+  Required<
     Pick<
       WorkerOptions,
       | 'shutdownGraceTime'
@@ -235,14 +217,14 @@ export type WorkerOptionsWithDefaults<T extends WorkerSpec = DefaultWorkerSpec> 
       | 'isolateExecutionTimeout'
       | 'maxIsolateMemoryMB'
       | 'maxCachedWorkflows'
+      | 'workerThreadPoolSize'
     >
   >;
 
 /**
  * {@link WorkerOptions} where the attributes the Worker requires are required and time units are converted from ms formatted strings to numbers.
  */
-export interface CompiledWorkerOptions<T extends WorkerSpec = DefaultWorkerSpec>
-  extends Omit<WorkerOptionsWithDefaults<T>, 'serverOptions'> {
+export interface CompiledWorkerOptions extends Omit<WorkerOptionsWithDefaults, 'serverOptions'> {
   shutdownGraceTimeMs: number;
   isolateExecutionTimeoutMs: number;
   stickyQueueScheduleToStartTimeoutMs: number;
@@ -285,12 +267,10 @@ export function resolveNodeModulesPaths(filesystem: typeof fs, workflowsPath?: s
   }
 }
 
-export function addDefaultWorkerOptions<T extends WorkerSpec>(
-  options: WorkerSpecOptions<T>
-): WorkerOptionsWithDefaults<T> {
+export function addDefaultWorkerOptions(options: WorkerOptions): WorkerOptionsWithDefaults {
   // Typescript is really struggling with the conditional exisitence of the dependencies attribute.
   // Help it out without sacrificing type safety of the other attributes.
-  const ret: Omit<WorkerOptionsWithDefaults<T>, 'dependencies'> = {
+  return {
     nodeModulesPaths: options.nodeModulesPaths ?? resolveNodeModulesPaths(fs, options.workflowsPath),
     shutdownGraceTime: '5s',
     shutdownSignals: ['SIGINT', 'SIGTERM', 'SIGQUIT'],
@@ -303,16 +283,13 @@ export function addDefaultWorkerOptions<T extends WorkerSpec>(
     stickyQueueScheduleToStartTimeout: '10s',
     isolateExecutionTimeout: '1s',
     maxIsolateMemoryMB: Math.max(os.totalmem() - GiB, GiB) / MiB,
-    isolatePoolSize: 8,
+    workerThreadPoolSize: 8,
     maxCachedWorkflows: options.maxCachedWorkflows || Math.max(os.totalmem() / GiB - 1, 1) * 500,
     ...options,
   };
-  return ret as WorkerOptionsWithDefaults<T>;
 }
 
-export function compileWorkerOptions<T extends WorkerSpec>(
-  opts: WorkerOptionsWithDefaults<T>
-): CompiledWorkerOptions<T> {
+export function compileWorkerOptions(opts: WorkerOptionsWithDefaults): CompiledWorkerOptions {
   return {
     ...opts,
     shutdownGraceTimeMs: msToNumber(opts.shutdownGraceTime),
@@ -418,7 +395,7 @@ function formatTaskToken(taskToken: Uint8Array) {
 /**
  * The temporal worker connects to the service and runs workflows and activities.
  */
-export class Worker<T extends WorkerSpec = DefaultWorkerSpec> {
+export class Worker {
   protected readonly activityHeartbeatSubject = new Subject<{
     taskToken: Uint8Array;
     details?: any;
@@ -435,13 +412,10 @@ export class Worker<T extends WorkerSpec = DefaultWorkerSpec> {
    * Create a new Worker.
    * This method initiates a connection to the server and will throw (asynchronously) on connection failure.
    */
-  public static async create<T extends WorkerSpec = DefaultWorkerSpec>(
-    options: WorkerSpecOptions<T>
-  ): Promise<Worker<T>> {
+  public static async create(options: WorkerOptions): Promise<Worker> {
     const nativeWorkerCtor: WorkerConstructor = this.nativeWorkerCtor;
     const compiledOptions = compileWorkerOptions(addDefaultWorkerOptions(options));
-    // Pass dependencies as undefined to please the type checker
-    const nativeWorker = await nativeWorkerCtor.create({ ...compiledOptions, dependencies: undefined });
+    const nativeWorker = await nativeWorkerCtor.create(compiledOptions);
     try {
       let workflowCreator: WorkflowCreator | undefined = undefined;
       // nodeModulesPaths should not be undefined if workflowsPath is provided
@@ -474,7 +448,7 @@ export class Worker<T extends WorkerSpec = DefaultWorkerSpec> {
      * Optional WorkflowCreator - if not provided, Worker will not poll on workflows
      */
     protected readonly workflowCreator: WorkflowCreator | undefined,
-    public readonly options: CompiledWorkerOptions<T>
+    public readonly options: CompiledWorkerOptions
   ) {}
 
   /**
