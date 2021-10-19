@@ -41,7 +41,7 @@ import {
 } from '@temporalio/common/lib/otel';
 
 import { closeableGroupBy, mergeMapWithState } from './rxutils';
-import { GiB, MiB } from './utils';
+import { GiB, MiB, toMB } from './utils';
 import { Workflow, WorkflowCreator } from './workflow/interface';
 import { WorkflowCodeBundler } from './workflow/bundler';
 import { Activity } from './activity';
@@ -433,8 +433,12 @@ export class Worker {
           compiledOptions.interceptors?.workflowModules
         );
         const bundle = await bundler.createBundle();
-        // TODO: don't hardcode number of threads
-        workflowCreator = await ThreadedVMWorkflowCreator.create(8, bundle, compiledOptions.isolateExecutionTimeoutMs);
+        nativeWorker.logger.info('Workflow bundle created', { size: `${toMB(bundle.length)}MB` });
+        workflowCreator = await ThreadedVMWorkflowCreator.create(
+          compiledOptions.workerThreadPoolSize,
+          bundle,
+          compiledOptions.isolateExecutionTimeoutMs
+        );
       }
 
       return new this(nativeWorker, workflowCreator, compiledOptions);

@@ -1,5 +1,4 @@
 import vm from 'vm';
-import { AsyncLocalStorage } from 'async_hooks';
 import { coresdk } from '@temporalio/proto';
 import * as internals from '@temporalio/workflow/lib/worker-interface';
 import { ExternalDependencyFunction, WorkflowInfo } from '@temporalio/workflow';
