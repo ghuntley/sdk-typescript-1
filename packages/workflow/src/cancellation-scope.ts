@@ -3,8 +3,9 @@ import type { AsyncLocalStorage as ALS } from 'node:async_hooks';
 
 export function makeAsyncLocalStorage<T>(): ALS<T> {
   const global = globalThis as any;
-  if ('AsyncLocalStorage' in global) {
-    return new global.AsyncLocalStorage();
+  if ('require' in global) {
+    const { AsyncLocalStorage } = global.require('async_hooks');
+    return new AsyncLocalStorage();
   }
   // In case Workflow code is imported in Node.js context
   return {} as any;

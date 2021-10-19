@@ -51,7 +51,7 @@ export class VMWorkflowCreator implements WorkflowCreator {
     if (this.script === undefined) {
       throw new IllegalStateError('Isolate context provider was destroyed');
     }
-    const context = vm.createContext({ AsyncLocalStorage });
+    const context = vm.createContext({ require });
     this.script.runInContext(context);
     return context;
   }
