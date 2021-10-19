@@ -52,6 +52,8 @@ import { Core } from './core';
 import { SpanContext } from '@opentelemetry/api';
 import IWFActivationJob = coresdk.workflow_activation.IWFActivationJob;
 import { ThreadedVMWorkflowCreator } from './workflow/threaded-vm';
+import { InjectedDependencies } from './dependencies';
+import { WorkflowInfo } from '@temporalio/workflow';
 
 native.registerErrors(errors);
 
@@ -196,6 +198,7 @@ export interface WorkerOptions {
   // maxTaskQueueActivitiesPerSecond?: number;
   // maxWorkerActivitiesPerSecond?: number;
   // isLocalActivityWorkerOnly?: boolean; // defaults to false
+  dependencies?: InjectedDependencies<any>;
 }
 
 /**
@@ -712,6 +715,10 @@ export class Worker {
     if (workflowCreator === undefined) {
       throw new IllegalStateError('Cannot process workflows without an IsolateContextProvider');
     }
+    interface WorkflowWithInfo {
+      workflow: Workflow;
+      info: WorkflowInfo;
+    }
     return pipe(
       closeableGroupBy(({ activation }) => activation.runId),
       mergeMap((group$) => {
@@ -738,10 +745,10 @@ export class Worker {
           }),
           mergeMapWithState(
             async (
-              workflow: Workflow | undefined,
+              state: WorkflowWithInfo | undefined,
               { activation, parentSpan, synthetic }
             ): Promise<{
-              state: Workflow | undefined;
+              state: WorkflowWithInfo | undefined;
               output: ContextAware<{ completion?: Uint8Array; close: boolean }>;
             }> => {
               try {
@@ -755,7 +762,7 @@ export class Worker {
                   const close = jobs.length < activation.jobs.length;
                   activation.jobs = jobs;
                   if (jobs.length === 0) {
-                    workflow?.dispose();
+                    state?.workflow.dispose();
                     if (!close) {
                       const message = 'Got a Workflow activation with no jobs';
                       throw new IllegalStateError(message);
@@ -770,7 +777,7 @@ export class Worker {
                     return { state: undefined, output: { close, completion, parentSpan } };
                   }
 
-                  if (workflow === undefined) {
+                  if (state === undefined) {
                     // Find a workflow start job in the activation jobs list
                     const maybeStartWorkflow = activation.jobs.find((j) => j.startWorkflow);
                     if (maybeStartWorkflow !== undefined) {
@@ -799,23 +806,24 @@ export class Worker {
                         runId: activation.runId,
                       });
                       this.numRunningWorkflowInstancesSubject.next(this.numRunningWorkflowInstancesSubject.value + 1);
-                      // workflow type is Workflow | undefined which doesn't work in the instrumented closures, create add local variable with type Workflow.
-                      const createdWF = await instrument(span, 'workflow.create', async () => {
+                      const workflowInfo = {
+                        workflowType,
+                        runId: activation.runId,
+                        workflowId,
+                        namespace: this.nativeWorker.namespace,
+                        taskQueue: this.options.taskQueue,
+                        isReplaying: activation.isReplaying,
+                      };
+
+                      const workflow = await instrument(span, 'workflow.create', async () => {
                         return await workflowCreator.createWorkflow(
-                          {
-                            workflowType,
-                            runId: activation.runId,
-                            workflowId,
-                            namespace: this.nativeWorker.namespace,
-                            taskQueue: this.options.taskQueue,
-                            isReplaying: activation.isReplaying,
-                          },
+                          workflowInfo,
                           this.options.interceptors?.workflowModules ?? [],
                           randomnessSeed.toBytes(),
                           tsToMs(activation.timestamp)
                         );
                       });
-                      workflow = createdWF;
+                      state = { workflow, info: workflowInfo };
                     } else {
                       throw new IllegalStateError(
                         'Received workflow activation for an untracked workflow with no start workflow job'
@@ -823,19 +831,41 @@ export class Worker {
                     }
                   }
 
-                  const completion = await workflow.activate(activation);
-                  this.log.debug('Completed activation', {
-                    runId: activation.runId,
-                  });
+                  try {
+                    const completion = await state.workflow.activate(activation);
+                    this.log.debug('Completed activation', {
+                      runId: activation.runId,
+                    });
 
-                  span.setAttribute('close', close).end();
-                  return { state: workflow, output: { close, completion, parentSpan } };
+                    span.setAttribute('close', close).end();
+                    return { state, output: { close, completion, parentSpan } };
+                  } finally {
+                    const externalCalls = await state.workflow.getAndResetExternalCalls();
+                    const { dependencies } = this.options;
+                    for (const { ifaceName, fnName, args } of externalCalls) {
+                      const dep = dependencies?.[ifaceName]?.[fnName];
+                      if (dep === undefined) {
+                        this.log.error('Workflow referenced an unregistrered external dependency', {
+                          ifaceName,
+                          fnName,
+                        });
+                      } else if (dep.callDuringReplay || !activation.isReplaying) {
+                        (async () => {
+                          try {
+                            await dep.fn({ ...state.info, isReplaying: activation.isReplaying }, ...args);
+                          } catch (error) {
+                            this.log.error('External dependency function threw an error', { ifaceName, fnName, error });
+                          }
+                        })();
+                      }
+                    }
+                  }
                 });
               } catch (error) {
                 this.log.error('Failed to activate workflow', {
                   runId: activation.runId,
                   error,
-                  workflowExists: workflow !== undefined,
+                  workflowExists: state !== undefined,
                 });
                 const completion = coresdk.workflow_completion.WFActivationCompletion.encodeDelimited({
                   runId: activation.runId,
@@ -844,7 +874,7 @@ export class Worker {
                   },
                 }).finish();
                 // TODO: should we wait to be evicted from core?
-                workflow?.dispose();
+                state?.workflow.dispose();
                 return { state: undefined, output: { close: true, completion, parentSpan } };
               }
             },

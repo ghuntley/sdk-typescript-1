@@ -65,6 +65,18 @@ parentPort.on('message', async ({ requestId, input }: WorkerThreadRequest) => {
         });
         return;
       }
+      case 'exteract-ext-calls': {
+        const workflow = workflowByRunId.get(input.runId);
+        if (workflow === undefined) {
+          throw new IllegalStateError(`Tried to activate non running workflow with runId: ${input.runId}`);
+        }
+        const calls = await workflow.getAndResetExternalCalls();
+        respond({
+          requestId,
+          result: { type: 'ok', output: { type: 'external-calls', calls } },
+        });
+        return;
+      }
       case 'dispose-workflow': {
         const workflow = workflowByRunId.get(input.runId);
         if (workflow === undefined) {

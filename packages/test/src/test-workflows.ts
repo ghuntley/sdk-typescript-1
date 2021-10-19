@@ -1486,13 +1486,12 @@ test('globalOverrides', async (t) => {
 
 test('logAndTimeout', async (t) => {
   const { workflowType, workflow } = t.context;
-  const logs: string[] = [];
-  await workflow.injectDependency('logger', 'info', (message: string) => logs.push(message));
   await t.throwsAsync(activate(t, makeStartWorkflow(workflowType)), {
     code: 'ERR_SCRIPT_EXECUTION_TIMEOUT',
     message: 'Script execution timed out after 100ms',
   });
-  t.deepEqual(logs, ['logging before getting stuck']);
+  const calls = await workflow.getAndResetExternalCalls();
+  t.deepEqual(calls, [{ ifaceName: 'logger', fnName: 'info', args: ['logging before getting stuck'] }]);
 });
 
 test('continueAsNewSameWorkflow', async (t) => {
@@ -1655,10 +1654,7 @@ test('failUnlessSignaledBeforeStart', async (t) => {
 });
 
 test('conditionWaiter', async (t) => {
-  const { workflowType, workflow } = t.context;
-  // This will set x = 3 in the workflow when resolved.
-  // Test that conditions are unblocked after external dependency resolution.
-  await workflow.injectDependency('unblock', 'me', async () => 3);
+  const { workflowType } = t.context;
   {
     const completion = await activate(t, makeStartWorkflow(workflowType));
     compareCompletion(t, completion, makeSuccess([makeStartTimerCommand({ seq: 1, startToFireTimeout: msToTs(1) })]));

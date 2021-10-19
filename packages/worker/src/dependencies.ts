@@ -25,7 +25,7 @@ import {
  * - `callDuringReplay` - whether or not `fn` will be called during Workflow replay - defaults to `false`
  */
 export interface InjectedDependencyFunction<F extends ExternalDependencyFunction> {
-  fn(info: WorkflowInfo, ...args: Parameters<F>): ReturnType<F>;
+  fn(info: WorkflowInfo, ...args: Parameters<F>): void | Promise<void>;
   callDuringReplay?: boolean;
 }
 

@@ -85,5 +85,5 @@ export * from './workflow';
 export * from './interceptors';
 export { ROOT_SCOPE, CancellationScope, CancellationScopeOptions, makeAsyncLocalStorage } from './cancellation-scope';
 export { Trigger } from './trigger';
-export { ExternalDependencyFunction, ExternalDependency, ExternalDependencies } from './dependencies';
+export { ExternalDependencyFunction, ExternalDependency, ExternalDependencies, ExternalCall } from './dependencies';
 export { ChildWorkflowHandle, ExternalWorkflowHandle } from './workflow-handle';

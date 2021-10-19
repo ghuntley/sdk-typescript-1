@@ -24,12 +24,23 @@ export interface ActivateWorkflow {
   activation: Uint8Array;
 }
 
+export interface ExtractExternalCalls {
+  type: 'exteract-ext-calls';
+  runId: string;
+}
+
 export interface DisposeWorkflow {
   type: 'dispose-workflow';
   runId: string;
 }
 
-export type WorkerThreadInput = Init | Destroy | CreateWorkflow | ActivateWorkflow | DisposeWorkflow;
+export type WorkerThreadInput =
+  | Init
+  | Destroy
+  | CreateWorkflow
+  | ActivateWorkflow
+  | ExtractExternalCalls
+  | DisposeWorkflow;
 
 export interface WorkerThreadRequest {
   requestId: BigInt;

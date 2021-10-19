@@ -19,7 +19,7 @@ import { alea, RNG } from './alea';
 import { ContinueAsNew, WorkflowInfo } from './interfaces';
 import { QueryInput, SignalInput, WorkflowExecuteInput, WorkflowInterceptors } from './interceptors';
 import { DeterminismViolationError, WorkflowExecutionAlreadyStartedError, isCancellation } from './errors';
-import { ExternalDependencies } from './dependencies';
+import { ExternalCall } from './dependencies';
 import { ROOT_SCOPE } from './cancellation-scope';
 
 export type ResolveFunction<T = any> = (val: T) => any;
@@ -371,7 +371,6 @@ export class State {
     timer: 1,
     activity: 1,
     childWorkflow: 1,
-    dependency: 1,
     signalWorkflow: 1,
     cancelWorkflow: 1,
     condition: 1,
@@ -409,8 +408,6 @@ export class State {
     throw new IllegalStateError('Tried to use Math.random before Workflow has been initialized');
   };
 
-  public dependencies: ExternalDependencies = {};
-
   /**
    * Used to require user code
    *
@@ -429,6 +426,14 @@ export class State {
    * Patches we sent to core {@link patched}
    */
   public readonly sentPatches = new Set<string>();
+
+  externalCalls = Array<ExternalCall>();
+
+  getAndResetExternalCalls(): ExternalCall[] {
+    const { externalCalls } = this;
+    this.externalCalls = [];
+    return externalCalls;
+  }
 
   /**
    * Buffer a Workflow command to be collected at the end of the current activation.

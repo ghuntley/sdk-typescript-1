@@ -14,10 +14,10 @@ import {
 } from '@temporalio/common';
 import { coresdk } from '@temporalio/proto/lib/coresdk';
 import { WorkflowInfo } from './interfaces';
-import { consumeCompletion, handleWorkflowFailure, state } from './internals';
+import { handleWorkflowFailure, state } from './internals';
 import { alea } from './alea';
 import { DeterminismViolationError } from './errors';
-import { ExternalDependencyFunction } from './dependencies';
+import { ExternalCall } from './dependencies';
 import { WorkflowInterceptorsFactory } from './interceptors';
 
 export function setRequireFunc(fn: Exclude<typeof state['require'], undefined>): void {
@@ -222,35 +222,8 @@ export function concludeActivation(): Uint8Array {
   }).finish();
 }
 
-/**
- * Inject an external dependency function into the Workflow via global state.
- * The injected function is available via {@link dependencies}.
- */
-export function inject(ifaceName: string, fnName: string, dependency: ExternalDependencyFunction): void {
-  if (state.dependencies[ifaceName] === undefined) {
-    state.dependencies[ifaceName] = {};
-  }
-  state.dependencies[ifaceName][fnName] = (...args: any[]) => dependency(...args);
-}
-
-export interface ExternalDependencyResult {
-  seq: number;
-  result: any;
-  error: any;
-}
-
-/**
- * Resolve external dependency function calls with given results.
- */
-export function resolveExternalDependencies(results: ExternalDependencyResult[]): void {
-  for (const { seq, result, error } of results) {
-    const completion = consumeCompletion('dependency', seq);
-    if (error) {
-      completion.reject(error);
-    } else {
-      completion.resolve(result);
-    }
-  }
+export function getAndResetExternalCalls(): ExternalCall[] {
+  return state.getAndResetExternalCalls();
 }
 
 /**

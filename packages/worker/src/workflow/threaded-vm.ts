@@ -1,5 +1,6 @@
 import { coresdk } from '@temporalio/proto';
 import { IllegalStateError, WorkflowInfo } from '@temporalio/workflow';
+import { ExternalCall } from '@temporalio/workflow/src/dependencies';
 import { Worker } from 'worker_threads';
 import { Workflow, WorkflowCreator } from './interface';
 import { WorkerThreadInput, WorkerThreadRequest } from './workflow-worker-thread/input';
@@ -67,7 +68,11 @@ export class ThreadedVMWorkflowCreator implements WorkflowCreator {
   protected workflowThreadIdx = 0;
   protected runIdToThreadNum = new Map<string, number>();
 
-  static async create(threadPoolSize: number, code: string, isolateExecutionTimeoutMs: number) {
+  static async create(
+    threadPoolSize: number,
+    code: string,
+    isolateExecutionTimeoutMs: number
+  ): Promise<ThreadedVMWorkflowCreator> {
     const workerThreadClients = Array(threadPoolSize)
       .fill(0)
       .map(() => new WorkerThreadClient(new Worker(require.resolve('./workflow-worker-thread'))));
@@ -117,6 +122,17 @@ export class VMWorkflowThreadProxy implements Workflow {
   }
 
   constructor(protected readonly workerThreadClient: WorkerThreadClient, public readonly runId: string) {}
+
+  async getAndResetExternalCalls(): Promise<ExternalCall[]> {
+    const output = await this.workerThreadClient.send({
+      type: 'exteract-ext-calls',
+      runId: this.runId,
+    });
+    if (!(output?.type === 'external-calls')) {
+      throw new TypeError(`Got invalid response output from Workflow Worker thread ${output}`);
+    }
+    return output.calls;
+  }
 
   async activate(activation: coresdk.workflow_activation.IWFActivation): Promise<Uint8Array> {
     const arr = coresdk.workflow_activation.WFActivation.encodeDelimited(activation).finish();

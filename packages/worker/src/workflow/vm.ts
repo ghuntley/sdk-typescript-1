@@ -6,6 +6,7 @@ import { ExternalDependencyFunction, WorkflowInfo } from '@temporalio/workflow';
 import { IllegalStateError } from '@temporalio/common';
 import { partition } from '../utils';
 import { Workflow, WorkflowCreator } from './interface';
+import { ExternalCall } from '@temporalio/workflow/src/dependencies';
 
 /**
  * Maintains a pool of v8 isolates, returns Context in a round-robin manner.
@@ -79,6 +80,10 @@ export class VMWorkflow implements Workflow {
     readonly dependencies: Record<string, Record<string, ExternalDependencyFunction>> = {}
   ) {}
 
+  async getAndResetExternalCalls(): Promise<ExternalCall[]> {
+    return this.workflowModule.getAndResetExternalCalls();
+  }
+
   /**
    * Inject a function into the isolate context global scope
    *
@@ -90,19 +95,6 @@ export class VMWorkflow implements Workflow {
       throw new IllegalStateError('Workflow isolate context uninitialized');
     }
     this.context[key] = val;
-  }
-
-  /**
-   * Inject an external dependency function into the isolate.
-   *
-   * and collecting them as part of Workflow activation.
-   *
-   * @param ifaceName name of the injected dependency interface (e.g. logger)
-   * @param fnName name of the dependency interface function (e.g. info)
-   * @param fn function to inject
-   */
-  public async injectDependency(ifaceName: string, fnName: string, fn: (...args: any[]) => any): Promise<void> {
-    this.workflowModule.inject(ifaceName, fnName, fn);
   }
 
   public async activate(activation: coresdk.workflow_activation.IWFActivation): Promise<Uint8Array> {
