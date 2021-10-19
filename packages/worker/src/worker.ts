@@ -157,7 +157,7 @@ export interface WorkerOptions {
   /**
    * Time to wait for result when calling a Workflow isolate function.
    * @format {@link https://www.npmjs.com/package/ms | ms} formatted string or number of milliseconds
-   * @default 1s
+   * @default 5s
    */
   isolateExecutionTimeout?: string | number;
 
@@ -287,7 +287,7 @@ export function addDefaultWorkerOptions(options: WorkerOptions): WorkerOptionsWi
     maxConcurrentWorkflowTaskPolls: 5,
     nonStickyToStickyPollRatio: 0.2,
     stickyQueueScheduleToStartTimeout: '10s',
-    isolateExecutionTimeout: '1s',
+    isolateExecutionTimeout: '5s',
     maxIsolateMemoryMB: Math.max(os.totalmem() - GiB, GiB) / MiB,
     workerThreadPoolSize: 8,
     maxCachedWorkflows: options.maxCachedWorkflows || Math.max(os.totalmem() / GiB - 1, 1) * 500,
