@@ -182,7 +182,7 @@ export interface WorkerOptions {
    *
    * This number is impacted by the the Worker's {@link maxIsolateMemoryMB} option.
    *
-   * @default `max(os.totalmem() / 1GiB - 1, 1) * 500`
+   * @default `max(os.totalmem() / 1GiB - 1, 1) * 200`
    */
   maxCachedWorkflows?: number;
 
@@ -274,8 +274,7 @@ export function resolveNodeModulesPaths(filesystem: typeof fs, workflowsPath?: s
 }
 
 export function addDefaultWorkerOptions(options: WorkerOptions): WorkerOptionsWithDefaults {
-  // Typescript is really struggling with the conditional exisitence of the dependencies attribute.
-  // Help it out without sacrificing type safety of the other attributes.
+  const { maxCachedWorkflows, ...rest } = options;
   return {
     nodeModulesPaths: options.nodeModulesPaths ?? resolveNodeModulesPaths(fs, options.workflowsPath),
     shutdownGraceTime: '5s',
@@ -290,8 +289,8 @@ export function addDefaultWorkerOptions(options: WorkerOptions): WorkerOptionsWi
     isolateExecutionTimeout: '5s',
     maxIsolateMemoryMB: Math.max(os.totalmem() - GiB, GiB) / MiB,
     workerThreadPoolSize: 8,
-    maxCachedWorkflows: options.maxCachedWorkflows || Math.max(os.totalmem() / GiB - 1, 1) * 500,
-    ...options,
+    maxCachedWorkflows: maxCachedWorkflows ?? Math.max(os.totalmem() / GiB - 1, 1) * 200,
+    ...rest,
   };
 }
 
@@ -440,7 +439,6 @@ export class Worker {
           compiledOptions.isolateExecutionTimeoutMs
         );
       }
-
       return new this(nativeWorker, workflowCreator, compiledOptions);
     } catch (err) {
       // Deregister our worker in case Worker creation (Webpack) failed
