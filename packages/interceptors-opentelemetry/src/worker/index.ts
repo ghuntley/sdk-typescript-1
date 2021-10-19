@@ -11,7 +11,7 @@ import {
 } from '@temporalio/worker';
 import { OpenTelemetryWorkflowExporter, SerializableSpan, SpanName } from '../workflow';
 import { instrumentFromSpanContext } from '../instrumentation';
-import { extractSpanContextFromHeaders } from '@temporalio/common';
+import { extractSpanContextFromHeaders } from '@temporalio/common/lib/otel';
 
 export interface InterceptorOptions {
   readonly tracer?: otel.Tracer;

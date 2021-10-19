@@ -31,12 +31,15 @@ import {
   defaultDataConverter,
   ActivityInterface,
   errorMessage,
+} from '@temporalio/common';
+import {
   extractSpanContextFromHeaders,
   linkSpans,
   RUN_ID_ATTR_KEY,
   NUM_JOBS_ATTR_KEY,
   TASK_TOKEN_ATTR_KEY,
-} from '@temporalio/common';
+} from '@temporalio/common/lib/otel';
+
 import { closeableGroupBy, mergeMapWithState } from './rxutils';
 import { GiB, MiB } from './utils';
 import { Workflow, WorkflowCreator } from './workflow/interface';
